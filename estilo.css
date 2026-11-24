@@ -398,8 +398,6 @@ button.redondo:hover { background: #8c8c8c; }
 .janela legend { margin-bottom: 4px; }
 .janela fieldset label { display: flex; align-items: center; gap: 8px; margin: 0; }
 .janela fieldset input { width: 20px; height: 20px; accent-color: var(--forte); }
-#resumo-importar { margin-bottom: 14px; color: var(--texto-suave); white-space: pre-line; }
-#resultado-importar { white-space: pre-line; color: var(--texto-suave); }
 .carregando { text-align: center; align-items: center; justify-content: center; gap: 14px; }
 .assunto-linha { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; flex-wrap: wrap; }
 .traducao { font-size: 15px; color: var(--texto-suave); }

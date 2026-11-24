@@ -21,7 +21,7 @@ const AREAS = [
 const TEMAS_PADRAO = {
   oclusao: {
     areas: ["Dental"],
-    en: ["occlus", "temporomandibular", "tmj", "condyl", "centric", "bruxism", "articulator", "intercusp", "masticat"],
+    en: ["occlusion", "occlusal contact", "occlusal adjust", "occlusal splint", "occlusal interference", "temporomandibular", "tmj", "condyl", "centric relation", "bruxism", "articulator", "intercusp", "muscles of mastication", "masticatory muscle", "mandibular movement", "lateral excursi", "anterior guidance"],
     pt: ["oclus", "temporomandib", "dtm", "bruxismo", "mastiga", "côndilo", "articulador"]
   },
   anatomia: {
@@ -36,12 +36,12 @@ const TEMAS_PADRAO = {
   },
   estomatologia: {
     areas: ["Dental"],
-    en: ["leukoplakia", "lichen planus", "ulcer", "candid", "pemphig", "submucous", "mucosa", "vesic", "aphth", "oral lesion", "oral cancer"],
+    en: ["leukoplakia", "erythroplakia", "lichen planus", "ulcer", "candid", "pemphig", "submucous fibrosis", "oral mucosa", "buccal mucosa", "aphth", "lesion", "oral cancer", "herpe", "stomatitis", "cheilitis", "biopsy", "burning mouth", "xerostomia", "sialo", "ranula", "mucocele", "fordyce", "pigmentation"],
     pt: ["mucosa", "úlcera", "leucoplas", "candid", "líquen", "câncer de boca", "lesão bucal"]
   },
   patologia: {
-    areas: ["Dental", "Pathology"],
-    en: ["cyst", "ameloblast", "odontogenic", "odontoma", "dysplasia", "oral carcinoma", "giant cell", "necrosis", "inflammation", "metaplasia"],
+    areas: ["Dental"],
+    en: ["cyst", "ameloblast", "odontogenic", "odontoma", "dysplasia", "carcinoma", "giant cell", "tumor", "tumour", "granuloma", "osteomyelitis", "fibroma", "hyperplasia", "necrosis", "inflammation", "adenoma", "imperfecta", "dens in dente", "taurodont", "supernumerary", "anodontia", "cherubism", "paget", "syndrome"],
     pt: ["cisto", "tumor", "neoplas", "carcinoma", "ameloblast", "patolog"]
   },
   fisiologia: {
@@ -81,10 +81,11 @@ function temaDe(materia) {
 /* ============================================================
    BUSCA
    ============================================================ */
-const CHAVE_BANCO = "quiz-diario-banco-v1";
+const CHAVE_BANCO = "quiz-diario-banco-v2";
+try { localStorage.removeItem("quiz-diario-banco-v1"); } catch (e) { /* sem memória */ }
 const SERVIDOR = "https://datasets-server.huggingface.co/filter";
 const PAGINA = 100;
-const MAXIMO_GUARDADO = 300;
+const MAXIMO_GUARDADO = 500;
 
 let banco = lerGuardado(CHAVE_BANCO, {});
 
@@ -126,12 +127,23 @@ async function contarIngles(tema) {
   return (await consultar("openlifescienceai/medmcqa", onde, 0, 1)).num_rows_total;
 }
 
+// A área "Dental" do banco traz algumas de dermatologia e clínica geral.
+const CORPO = /\b(penis|penile|genital\w*|groin|axilla\w*|vagina\w*|cervix|glans|scrot\w*|testi\w*|prostat\w*|breast|ovar\w*|uterus|chancr\w*|sexual\w*|sex worker|intercourse|duoden\w*|gastric|peptic|colon|rectal|rectum|corneal?|diabetic foot|bed sore)\b/i;
+const PELE = /\b(rash|itch\w*|prurit\w*|extremit\w*|knees?|elbows?|nails?|scalp|dermatitis|scabies|psoriasis|papules?|trunk)\b/i;
+const BOCA = /\b(oral|mouth|buccal|lips?|tooth|teeth|dental|dent\w+|tongue|gingiv\w*|palat\w*|jaws?|mandib\w*|maxill\w*|saliva\w*|tmj|temporomandibular)\b/i;
+function foraDaBoca(pergunta, opcoes) {
+  const tudo = pergunta + " " + opcoes.join(" ");
+  return CORPO.test(tudo) ? !BOCA.test(pergunta) || /genital|sexual|penis|glans/i.test(pergunta) : PELE.test(tudo) && !BOCA.test(pergunta);
+}
+
 function converterIngles(linha) {
-  const opcoes = [linha.opa, linha.opb, linha.opc, linha.opd].map((o) => String(o ?? "").trim());
+  const opcoes = [linha.opa, linha.opb, linha.opc, linha.opd].map((o) => String(o ?? "").replace(/^\s*\(?[a-d]\)\s*/i, "").trim());
   const pergunta = String(linha.question ?? "").trim();
   const unicas = new Set(opcoes.map((o) => o.toLowerCase()));
   const pedeImagem = /\b(image|figure|picture|photograph|diagram|shown (below|above|in|here))\b/i.test(pergunta);
-  if (pergunta.length < 12 || unicas.size < 4 || unicas.has("") || !(linha.cop in opcoes) || pedeImagem) return null;
+  if (pergunta.length < 12 || unicas.size < 4 || unicas.has("") || !(linha.cop in opcoes) || pedeImagem || foraDaBoca(pergunta, opcoes)) return null;
+  // enunciados colados com alternativas, ou respostas em código ("bc")
+  if (/a\)[\s\S]*b\)[\s\S]*c\)/i.test(pergunta) || opcoes.some((o) => /^[a-e]{1,4}$/i.test(o))) return null;
   const explicacao = String(linha.exp ?? "").trim();
   return {
     chave: "mm|" + linha.id, origem: "medmcqa", ingles: true, letras: true, pergunta, opcoes,
@@ -140,37 +152,96 @@ function converterIngles(linha) {
   };
 }
 
-// Devolve questões em inglês do tema, buscando mais quando faltam inéditas.
-async function questoesIngles(materia, jaVista, quantas) {
+/* ---------- dificuldade estimada ----------
+   O banco não informa dificuldade. A estimativa soma pistas do texto
+   (tamanho, caso clínico, termos avançados, palavras raras) e compara
+   as questões do mesmo tema entre si. */
+// Ciência básica avançada, teoria e pesquisa: puxam para o extremo.
+const AVANCADO = /\b(genes?|genetic\w*|mutation\w*|chromosom\w*|receptors?|mglur\w*|cytokine\w*|interleukin\w*|enzymes?|kinases?|protease\w*|collagen|antibod\w*|antigen\w*|immuno\w*|histochem\w*|ultrastructur\w*|pathogenesis|molecul\w*|syndromes?|biomechanic\w*|modulus|coefficient|pka|half.?life|metabolis\w*|pharmacokinetic\w*|embryo\w*|derived from|derivative|differentiat\w*|hypothes[ie]s|theor(y|ies)|concept|criteria|index|proposed|described by|given by|introduced|discovered|coined|microscop\w*|electron|isotope\w*|cephalometric|fulcrum|vectors?|plexus|nucleus|ganglion|synap\w*|fibroblast\w*|osteoclast\w*|osteoblast\w*|apopto\w*|marker|law of|angle of|bennett|fischer|christensen|hanau|monson)\b|\bp\d{2}\b/gi;
+// Conceitos diretos e conduta do dia a dia: puxam para o fácil.
+const BASICO = /\b(most common(ly)?|commonest|is called|also (called|known as)|known as|is defined as|definition|main|chief|function of|treatment of choice|indicated|contraindicated|first (sign|step|choice)|best treat\w*|management of|used for|used to|caused by|cause of|due to|prevent\w*|sign of|feature of|symptom\w*)\b/gi;
+const PRATICO = /\b(patients?|treatment|caries|restor\w*|denture|extract\w*|crown|pain|fracture|radiograph|anesthe\w*|toothbrush\w*|fluoride|gingiv\w*|implant|orthodontic|malocclusion|xerostomia)\b/gi;
+
+function pontosDeDificuldade(q) {
+  const vezes = (texto, regra) => (texto.match(regra) || []).length;
+  const opcoes = q.opcoes.join(" ");
+  const caso = /\b(year[- ]old|years old|presents? with|complain\w*|on examination|history of|reports? (to|with))\b/i.test(q.pergunta);
+  let pontos = Math.min(caso ? 0.8 : 1.8, Math.log2(1 + q.pergunta.length / 60));
+  pontos += Math.min(0.8, opcoes.length / 220);
+  pontos += Math.min(4, vezes(q.pergunta, AVANCADO) * 1.6 + vezes(opcoes, AVANCADO) * 0.5);
+  pontos -= Math.min(1.6, vezes(q.pergunta, BASICO) * 0.8);
+  pontos -= Math.min(1.2, vezes(q.pergunta, PRATICO) * 0.4);
+  if (caso) pontos += 0.9; // caso clínico: em geral fica no médio ou difícil
+  if (/\b(except|not true|false|incorrect|least likely|all of the following)\b/i.test(q.pergunta)) pontos += 0.3;
+  if (q.opcoes.filter((o) => /\d/.test(o)).length >= 3 && !caso) pontos += 1.3; // valores exatos
+  return pontos;
+}
+
+// Dá a cada questão uma posição de 0 (mais básica) a 1 (mais difícil).
+function ordenarPorDificuldade(lista) {
+  const palavrasDe = (q) => [...new Set((q.pergunta + " " + q.opcoes.join(" ")).toLowerCase().match(/[a-z]{4,}/g) || [])];
+  const emQuantas = {};
+  const palavras = lista.map(palavrasDe);
+  palavras.forEach((ps) => ps.forEach((p) => { emQuantas[p] = (emQuantas[p] || 0) + 1; }));
+  const notas = lista.map((q, i) => {
+    const raras = palavras[i].length ? palavras[i].reduce((s, p) => s + Math.log(lista.length / emQuantas[p]), 0) / palavras[i].length : 0;
+    return { q, nota: pontosDeDificuldade(q) + raras * 0.6 };
+  }).sort((a, b) => a.nota - b.nota);
+  return notas.map(({ q }, i) => ({ ...q, posicao: notas.length > 1 ? i / (notas.length - 1) : 0.5 }));
+}
+
+// Distância da questão até a faixa do nível: 0 quando está dentro dela.
+const FAIXAS = { 1: [0, 0.25], 2: [0.25, 0.5], 3: [0.5, 0.75], 4: [0.75, 1] };
+function distanciaDoNivel(q, nivel) {
+  const [de, ate] = FAIXAS[nivel];
+  return q.posicao < de ? de - q.posicao : q.posicao > ate ? q.posicao - ate : 0;
+}
+
+// Devolve questões em inglês do tema e do nível, buscando mais quando
+// faltam inéditas. Se a faixa não bastar, completa com as vizinhas.
+async function questoesIngles(materia, jaVista, quantas, nivel) {
   const onde = filtroIngles(temaDe(materia));
   if (!onde) return { lista: [], falhou: false };
   const caixa = banco[onde] || (banco[onde] = { total: null, proxima: 0, lista: [] });
-  const ineditas = () => caixa.lista.filter((q) => !jaVista(q.chave)).length;
+  const doNivel = () => ordenarPorDificuldade(caixa.lista).filter((q) => distanciaDoNivel(q, nivel) === 0);
+  const ineditas = () => doNivel().filter((q) => !jaVista(q.chave)).length;
   let falhou = false;
 
-  for (let tentativa = 0; tentativa < 4 && ineditas() < quantas; tentativa++) {
-    const paginas = caixa.total === null ? 1 : Math.ceil(caixa.total / PAGINA);
-    if (caixa.total !== null && tentativa >= paginas) break;
-    try {
-      const dados = await consultar("openlifescienceai/medmcqa", onde, caixa.proxima * PAGINA, PAGINA);
-      caixa.total = dados.num_rows_total;
-      caixa.proxima = (caixa.proxima + 1) % Math.max(1, Math.ceil(caixa.total / PAGINA));
-      const conhecidas = new Set(caixa.lista.map((q) => q.chave));
-      const textos = new Set(caixa.lista.map((q) => q.pergunta.toLowerCase()));
-      for (const { row } of dados.rows) {
-        const q = converterIngles(row);
-        if (q && !conhecidas.has(q.chave) && !textos.has(q.pergunta.toLowerCase())) {
-          conhecidas.add(q.chave);
-          textos.add(q.pergunta.toLowerCase());
-          caixa.lista.push(q);
-        }
+  const receber = (linhas) => {
+    const conhecidas = new Set(caixa.lista.map((q) => q.chave));
+    const textos = new Set(caixa.lista.map((q) => q.pergunta.toLowerCase()));
+    for (const { row } of linhas) {
+      const q = converterIngles(row);
+      if (q && !conhecidas.has(q.chave) && !textos.has(q.pergunta.toLowerCase())) {
+        conhecidas.add(q.chave);
+        textos.add(q.pergunta.toLowerCase());
+        caixa.lista.push(q);
       }
-      if (!caixa.total) break;
-    } catch (e) {
-      falhou = true;
-      break;
     }
-  }
+  };
+  const buscarPagina = async () => {
+    const pagina = caixa.proxima;
+    const paginas = Math.max(1, Math.ceil((caixa.total || 1) / PAGINA));
+    caixa.proxima = (caixa.proxima + 1) % paginas;
+    const dados = await consultar("openlifescienceai/medmcqa", onde, pagina * PAGINA, PAGINA);
+    caixa.total = dados.num_rows_total;
+    return dados.rows;
+  };
+
+  try {
+    if (caixa.total === null) {
+      receber(await buscarPagina());
+      caixa.proxima = caixa.total > PAGINA ? 1 : 0;
+    }
+    const paginas = Math.ceil(caixa.total / PAGINA);
+    // Até 4 páginas por vez: o bastante para comparar dificuldades.
+    const cabem = Math.min(paginas - 1, 3);
+    if (cabem > 0 && caixa.lista.length < MAXIMO_GUARDADO && (caixa.lista.length < cabem * PAGINA * 0.8 || ineditas() < quantas)) {
+      const partes = await Promise.all(Array.from({ length: cabem }, buscarPagina));
+      partes.forEach(receber);
+    }
+  } catch (e) { falhou = true; }
+
   if (caixa.lista.length > MAXIMO_GUARDADO) {
     const novas = caixa.lista.filter((q) => !jaVista(q.chave));
     const velhas = caixa.lista.filter((q) => jaVista(q.chave));
@@ -182,7 +253,12 @@ async function questoesIngles(materia, jaVista, quantas) {
     if (chave !== "enare" && chave !== "contagens" && chave !== onde && !atuais.has(chave)) delete banco[chave];
   }
   guardar(CHAVE_BANCO, banco);
-  return { lista: caixa.lista, falhou };
+
+  const ordenadas = ordenarPorDificuldade(caixa.lista).map((q) => ({ ...q, distancia: distanciaDoNivel(q, nivel) }));
+  const limite = ordenadas.filter((q) => q.distancia === 0 && !jaVista(q.chave)).length >= quantas ? 0 : 0.25;
+  let lista = ordenadas.filter((q) => q.distancia <= limite);
+  if (lista.length < quantas) lista = ordenadas.sort((a, b) => a.distancia - b.distancia).slice(0, quantas);
+  return { lista, falhou };
 }
 
 const semAcento = (t) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -216,7 +292,8 @@ async function questoesPortugues(materia) {
     // começo de palavra, para "dtm" ou "atm" não casarem no meio de outra
     return palavras.some((p) => contarNoTexto(texto, p) > 0);
   });
-  return { lista, falhou };
+  // Casos longos ficam no difícil; perguntas diretas, no médio.
+  return { lista: lista.map((q) => ({ ...q, nivel: q.pergunta.length > 300 || /paciente/i.test(q.pergunta) ? 3 : 2 })), falhou };
 }
 
 /* ============================================================
@@ -323,57 +400,4 @@ function traduzirQuestao(q) {
     traduzindo.set(q.chave, tarefa);
   }
   return traduzindo.get(q.chave);
-}
-
-/* ============================================================
-   IMPORTAR QUESTÕES COLADAS
-   Entende alternativas "A) ...", "Resposta: B" e "Explicação: ..."
-   ============================================================ */
-function lerQuestoes(texto) {
-  const prontas = [];
-  const problemas = [];
-  let atual = null, depoisDeVazia = false, lugar = "";
-  const nova = () => ({ pergunta: "", opcoes: [], resposta: "", explicacao: "" });
-  const fechar = () => {
-    if (!atual) return;
-    const { pergunta, opcoes, resposta, explicacao } = atual;
-    const titulo = pergunta.trim().replace(/^(quest[ãa]o\s*)?\d+\s*[.):-]\s*/i, "");
-    const certa = opcoes.find((o) => o.letra === resposta);
-    const textos = opcoes.map((o) => o.texto.trim());
-    if (!titulo && !opcoes.length) { /* sobra de texto */ }
-    else if (!titulo) problemas.push("Uma questão está sem enunciado.");
-    else if (opcoes.length < 2) problemas.push("Sem alternativas: " + titulo.slice(0, 60));
-    else if (!certa) problemas.push("Sem resposta: " + titulo.slice(0, 60));
-    else if (new Set(textos).size < textos.length) problemas.push("Alternativas repetidas: " + titulo.slice(0, 60));
-    else prontas.push({ pergunta: titulo, certa: certa.texto.trim(), erradas: textos.filter((t) => t !== certa.texto.trim()), explicacao: explicacao.trim() });
-    atual = null;
-  };
-
-  for (const bruta of texto.replace(/\r/g, "").split("\n")) {
-    const linha = bruta.trim();
-    if (!linha) { depoisDeVazia = true; continue; }
-    const opcao = linha.match(/^(\*)?\s*\(?([A-Ea-e])\s*[).:-]\s*(.+)$/);
-    const resposta = linha.match(/^(?:resposta(?: correta)?|gabarito|alternativa correta)\s*[:\-]?\s*\(?([A-Ea-e])\b/i);
-    const explica = linha.match(/^(?:explica[çc][ãa]o|coment[áa]rio|justificativa)\s*:\s*(.*)$/i);
-    if (resposta && atual) { atual.resposta = resposta[1].toUpperCase(); lugar = "resposta"; }
-    else if (explica && atual) { atual.explicacao = explica[1]; lugar = "explicacao"; }
-    else if (opcao && atual && atual.pergunta && !atual.resposta.length) {
-      const letra = opcao[2].toUpperCase();
-      atual.opcoes.push({ letra, texto: opcao[3] });
-      if (opcao[1]) atual.marcada = letra;
-      lugar = "opcao";
-    }
-    else if (atual && lugar === "explicacao" && !depoisDeVazia) atual.explicacao += " " + linha;
-    else if (atual && lugar === "opcao" && !depoisDeVazia && !/^(quest[ãa]o\s*)?\d+\s*[.):-]\s/i.test(linha)) atual.opcoes[atual.opcoes.length - 1].texto += " " + linha;
-    else {
-      if (atual && atual.opcoes.length) { if (!atual.resposta) atual.resposta = atual.marcada || ""; fechar(); }
-      if (!atual) atual = nova();
-      atual.pergunta += (atual.pergunta ? " " : "") + linha;
-      lugar = "pergunta";
-    }
-    depoisDeVazia = false;
-  }
-  if (atual && !atual.resposta) atual.resposta = atual.marcada || "";
-  fechar();
-  return { prontas, problemas };
 }

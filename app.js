@@ -5,7 +5,7 @@
    ============================================================ */
 const CHAVE = "quiz-diario-v1";
 const UM_DIA = 24 * 60 * 60 * 1000;
-const VERSAO = 4; // mude junto com os ?v= do index.html
+const VERSAO = 5; // mude junto com os ?v= do index.html
 
 // Botões de teste só aparecem no computador, nunca no site publicado.
 const MODO_TESTE = ["", "localhost", "127.0.0.1"].includes(location.hostname);
@@ -22,7 +22,6 @@ function estadoInicial() {
     vistas: {},                   // ordem em que cada pergunta foi respondida por último
     contador: 0,
     ocultas: {},                  // questões que a pessoa escondeu
-    importadas: {},               // questões coladas, por matéria
     materias: JSON.parse(JSON.stringify(MATERIAS_EXEMPLO))
   };
 }
@@ -126,8 +125,7 @@ function mostrar(...conteudo) {
 function materiaPorId(id) { return estado.materias.find((m) => m.id === id); }
 function materiasSelecionadas() { return estado.materias.filter((m) => m.selecionada); }
 function perguntasDe(materia) {
-  const minhas = (estado.importadas[materia.id] || []).map((p) => ({ ...p, importada: true }));
-  return minhas.concat(PERGUNTAS[materia.id] || []);
+  return PERGUNTAS[materia.id] || [];
 }
 function modoAtual() { return MODOS.find((m) => m.id === estado.modo) || MODOS[0]; }
 
@@ -164,17 +162,12 @@ function telaInicial() {
 
   const detalhe = el("p", { class: "detalhe", "aria-live": "polite" });
   const atualizarDetalhe = () => {
-    const perguntas = escolher(materiasSelecionadas().map(filaLocal));
-    const exemplos = perguntas.filter((p) => p.exemplo).length;
-    const online = modoAtual().nivel >= 3;
-    const quantidade = online
-      ? "até " + PERGUNTAS_POR_QUIZ + " perguntas" + (temTradutor() ? "" : " · sem tradutor neste navegador")
-      : perguntas.length < PERGUNTAS_POR_QUIZ
-        ? perguntas.length + " de " + PERGUNTAS_POR_QUIZ + " perguntas disponíveis"
-        : PERGUNTAS_POR_QUIZ + " perguntas";
+    const semTema = materiasSelecionadas().filter((m) => !filtroIngles(temaDe(m)));
     detalhe.replaceChildren(...(materiasSelecionadas().length === 0
       ? ["nenhuma matéria selecionada"]
-      : [modoAtual().descricao, el("br"), quantidade + (exemplos && !online ? " · " + plural(exemplos, "exemplo", "exemplos") : "")]));
+      : [modoAtual().descricao, el("br"), semTema.length
+          ? "sem temas: " + semTema.map((m) => m.nome).join(", ")
+          : "até " + PERGUNTAS_POR_QUIZ + " perguntas" + (temTradutor() ? "" : " · sem tradutor neste navegador")]));
   };
 
   const modos = MODOS.map((modo) => el("label", { class: "modo" },
@@ -227,7 +220,7 @@ function simularDia() {
 }
 
 function restaurar() {
-  confirmar("restaurar exemplo?", "As matérias, os materiais e as questões que você adicionou serão apagados e o foguinho volta a " + FOGUINHO_INICIAL + ".", "restaurar", () => {
+  confirmar("restaurar exemplo?", "As matérias e os materiais que você adicionou serão apagados e o foguinho volta a " + FOGUINHO_INICIAL + ".", "restaurar", () => {
     estado = estadoInicial();
     salvar();
     telaInicial();
@@ -438,8 +431,7 @@ function telaMateria(materia) {
       area,
       el("div", { class: "acoes rodape" },
         el("button", { type: "button", class: "botao botao-claro", onclick: () => ir("cadastrar") }, "voltar"),
-        el("button", { type: "button", class: "botao botao-claro", onclick: () => abrirTemas(materia) }, "temas da busca"),
-        el("button", { type: "button", class: "botao botao-claro", onclick: () => abrirImportar(materia) }, "minhas questões")
+        el("button", { type: "button", class: "botao botao-claro", onclick: () => abrirTemas(materia) }, "temas da busca")
       )
     )
   ));
@@ -459,9 +451,19 @@ function abrirTemas(materia) {
   $("#origem-temas").textContent = auto
     ? plural(auto, "palavra em inglês foi preenchida", "palavras em inglês foram preenchidas") + " sozinha" + (auto === 1 ? "" : "s") + ". Apague as que não servirem."
     : "Adicione arquivos à matéria para preencher sozinho, ou digite aqui.";
+  mostrarEscondidas();
   $("#temas-areas").replaceChildren(el("legend", {}, "áreas do banco em inglês"), ...AREAS.map(([id, nome]) =>
     el("label", {}, el("input", { type: "checkbox", value: id, checked: tema.areas.includes(id) }), nome)));
   $("#janela-temas").showModal();
+}
+
+function mostrarEscondidas() {
+  const quantas = Object.keys(estado.ocultas).length;
+  $("#escondidas-temas").replaceChildren(...(quantas ? [el("button", { type: "button", class: "link", onclick: () => {
+    estado.ocultas = {};
+    salvar();
+    mostrarEscondidas();
+  } }, "voltar a mostrar " + plural(quantas, "questão escondida", "questões escondidas"))] : []));
 }
 
 function temaDigitado() {
@@ -514,55 +516,6 @@ $("#form-temas").addEventListener("submit", (e) => {
   avisar("Temas salvos.");
 });
 
-/* ---------- minhas questões ---------- */
-const MODELO_IMPORTAR = "1. Qual músculo eleva a mandíbula?\nA) Masseter\nB) Milo-hióideo\nC) Digástrico\nResposta: A\nExplicação: O masseter eleva a mandíbula.";
-
-function resumoImportar() {
-  const minhas = estado.importadas[materiaAberta.id] || [];
-  const escondidas = Object.keys(estado.ocultas).length;
-  $("#resumo-importar").replaceChildren(
-    plural(minhas.length, "questão sua", "questões suas") + " nesta matéria.",
-    ...(escondidas ? [" ", el("button", { type: "button", class: "link", onclick: () => {
-      estado.ocultas = {};
-      salvar();
-      resumoImportar();
-    } }, "voltar a mostrar " + plural(escondidas, "questão escondida", "questões escondidas"))] : [])
-  );
-}
-
-function abrirImportar(materia) {
-  materiaAberta = materia;
-  $("#nivel-importar").replaceChildren(...MODOS.map((m) => el("option", { value: m.nivel }, m.nome)));
-  $("#texto-importar").value = "";
-  $("#texto-importar").placeholder = MODELO_IMPORTAR;
-  $("#resultado-importar").textContent = "";
-  resumoImportar();
-  $("#janela-importar").showModal();
-  $("#texto-importar").focus();
-}
-
-$("#form-importar").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const { prontas, problemas } = lerQuestoes($("#texto-importar").value);
-  const nivel = Number($("#nivel-importar").value);
-  const lista = estado.importadas[materiaAberta.id] || (estado.importadas[materiaAberta.id] = []);
-  const existentes = new Set(perguntasDe(materiaAberta).map((p) => p.pergunta));
-  let repetidas = 0;
-  let novas = 0;
-  for (const q of prontas) {
-    if (existentes.has(q.pergunta)) { repetidas++; continue; }
-    existentes.add(q.pergunta);
-    lista.push({ nivel, ...q });
-    novas++;
-  }
-  salvar();
-  resumoImportar();
-  if (novas && !problemas.length) $("#texto-importar").value = "";
-  $("#resultado-importar").textContent = !prontas.length && !problemas.length
-    ? "Nenhuma questão reconhecida. Siga o modelo da caixa."
-    : [plural(novas, "questão adicionada", "questões adicionadas") + (repetidas ? ", " + plural(repetidas, "repetida", "repetidas") : "") + ".", ...problemas.slice(0, 5)].join("\n");
-});
-
 function linhaMaterial(materia, nome, aoRemover) {
   const ponto = nome.lastIndexOf(".");
   const tipo = ponto > 0 ? nome.slice(ponto + 1, ponto + 5).toUpperCase() : "ARQ";
@@ -584,10 +537,18 @@ function linhaMaterial(materia, nome, aoRemover) {
 /* ============================================================
    9. QUIZ
    ============================================================ */
-// Questões que já estão no site: importadas, definitivas e exemplos.
+// Questões que já estão no site. Quando os slides definem os temas,
+// só entram as que falam desses temas.
 function filaLocal(materia) {
   const nivel = modoAtual().nivel;
-  return perguntasDe(materia).filter((p) => p.nivel === nivel).map((p) => ({
+  const tema = temaDe(materia);
+  const peloSlide = temaAutomatico(materia).en.length >= 3;
+  const palavras = tema.pt.map(semAcento);
+  const noTema = (p) => {
+    const texto = semAcento(p.pergunta + " " + p.certa + " " + p.erradas.join(" ") + " " + p.explicacao);
+    return palavras.some((t) => contarNoTexto(texto, t));
+  };
+  return perguntasDe(materia).filter((p) => p.nivel === nivel && (!peloSlide || noTema(p))).map((p) => ({
     ...p, chave: materia.id + "|" + p.pergunta, materia: materia.nome,
     opcoes: embaralhar([p.certa, ...p.erradas]), peso: p.exemplo ? 3 : 0
   }));
@@ -614,25 +575,24 @@ function escolher(filas) {
   return embaralhar(escolhidas);
 }
 
-// Junta o que está no site com os bancos abertos (modos difícil e extremo).
+// Junta o que está no site com os bancos abertos, no nível do modo.
 async function montarPerguntas() {
   const nivel = modoAtual().nivel;
   const jaVista = (chave) => Boolean(estado.vistas[chave] || estado.ocultas[chave]);
   let falhou = false;
   const filas = await Promise.all(materiasSelecionadas().map(async (materia) => {
     const fila = filaLocal(materia);
-    if (nivel < 3) return fila;
     const comum = { materia: materia.nome };
-    if (nivel === 3) {
+    if (nivel === 2 || nivel === 3) {
       const pt = await questoesPortugues(materia);
       falhou = falhou || pt.falhou;
-      fila.push(...pt.lista.map((q) => ({ ...q, ...comum, peso: 1 })));
+      fila.push(...pt.lista.filter((q) => q.nivel === nivel).map((q) => ({ ...q, ...comum, peso: 1 })));
     }
     const prontas = fila.filter((p) => !p.exemplo && !jaVista(p.chave)).length;
     if (prontas < PERGUNTAS_POR_QUIZ) {
-      const en = await questoesIngles(materia, jaVista, PERGUNTAS_POR_QUIZ - prontas);
+      const en = await questoesIngles(materia, jaVista, PERGUNTAS_POR_QUIZ - prontas, nivel);
       falhou = falhou || en.falhou;
-      fila.push(...en.lista.map((q) => ({ ...q, ...comum, peso: 2 })));
+      fila.push(...en.lista.map((q) => ({ ...q, ...comum, peso: 2 + q.distancia })));
     }
     return fila;
   }));
@@ -644,9 +604,8 @@ function linhaFonte(p) {
     const origem = ORIGENS[p.origem];
     return el("p", { class: "fonte" }, "Fonte: ",
       el("a", { href: origem.url, target: "_blank", rel: "noopener noreferrer" }, origem.nome),
-      (p.ano ? ", " + p.ano : "") + (p.ingles && traducoes[p.chave] ? " · tradução automática" : "") + " · não revisada");
+      (p.ano ? ", " + p.ano : "") + (p.ingles && traducoes[p.chave] ? " · tradução automática" : "") + " · dificuldade estimada, não revisada");
   }
-  if (p.importada) return el("p", { class: "fonte" }, "Fonte: questão importada por você.");
   if (p.exemplo) return el("p", { class: "fonte" }, "Pergunta de exemplo, sem fonte conferida.");
   const fonte = FONTES[p.fonte];
   if (!fonte) return el("p", { class: "fonte" }, "Fonte: conceito clássico, ainda não conferido em uma fonte específica.");
@@ -667,18 +626,14 @@ async function comecarQuiz() {
   const modo = modoAtual();
   const minha = ++busca;
   carregando = true;
-  if (modo.nivel >= 3) {
-    ligarTradutor((p) => avisar("Baixando o tradutor do Chrome: " + p + "%"));
-    telaCarregando();
-  }
+  ligarTradutor((p) => avisar("Baixando o tradutor do Chrome: " + p + "%"));
+  telaCarregando();
   const { perguntas, falhou } = await montarPerguntas();
   if (minha !== busca) return; // a pessoa saiu durante a busca
   carregando = false;
   if (!perguntas.length) {
     ir("inicio");
-    avisar(falhou ? "O banco online não respondeu. Confira a internet." : modo.nivel >= 3
-      ? "Nenhuma questão encontrada. Abra a matéria e preencha os temas da busca."
-      : "Nenhuma questão neste modo. Abra a matéria e adicione em minhas questões.");
+    avisar(falhou ? "O banco online não respondeu. Confira a internet." : "Nenhuma questão encontrada. Abra a matéria e arraste seus slides.");
     return;
   }
   quiz = { modo: modo.nome, perguntas, atual: 0, respostas: [], original: {}, terminou: false };

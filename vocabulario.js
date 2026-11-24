@@ -8,14 +8,14 @@
    Pode acrescentar linhas à vontade.
    ============================================================ */
 const VOCABULARIO = `
-oclusao;oclus,intercuspid;occlus
+oclusao;oclus,intercuspid;occlusion
 oclusao;temporomandib,atm,dtm;temporomandibular
 oclusao;condil;condyl
 oclusao;disco articular,deslocamento de disco;articular disc
 oclusao;bruxismo;bruxism
 oclusao;relacao centrica;centric relation
 oclusao;articulador;articulator
-oclusao;mastigat,mastigac;masticat
+oclusao;mastigat,mastigac;mastication
 oclusao;guia canina,guia anterior;canine guid
 oclusao;placa oclusal,placa estabilizadora,placa miorrelaxante;splint
 oclusao;dimensao vertical;vertical dimension
@@ -65,7 +65,7 @@ radiologia;radiopac;radiopa
 radiologia;raios x,raio x;x-ray
 radiologia;bissetriz;bisecting
 radiologia;paralelismo;paralleling
-radiologia;filme radiografico,filmes radiograficos;film
+radiologia;filme radiografico,filmes radiograficos;x-ray film
 radiologia;radioprotecao,protecao radiologica;radiation protection
 radiologia;dose de radiacao,radiacao ionizante;radiation
 radiologia;ressonancia magnetica;mri
@@ -202,7 +202,7 @@ farmacologia;bisfosfonato;bisphosphonate
 farmacologia;bloqueio do nervo,bloqueio regional;nerve block
 ortodontia;ortodont;orthodont
 ortodontia;maloclus,ma oclusao;malocclusion
-ortodontia;classe de angle,classificacao de angle;angle
+ortodontia;classe de angle,classificacao de angle;angles class
 ortodontia;mordida cruzada;crossbite
 ortodontia;mordida aberta;open bite
 ortodontia;sobremordida;overbite

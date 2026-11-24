@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Quiz Diário</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
-  <link rel="stylesheet" href="estilo.css?v=4">
+  <link rel="stylesheet" href="estilo.css?v=5">
 </head>
 <body>
   <!-- As telas são desenhadas aqui dentro pelo app.js -->
@@ -35,28 +35,12 @@
       <label for="temas-pt">palavras em português, separadas por vírgula</label>
       <textarea id="temas-pt" rows="3"></textarea>
       <fieldset id="temas-areas"><legend>áreas do banco em inglês</legend></fieldset>
+      <p id="escondidas-temas" class="traducao"></p>
       <p id="resultado-temas" class="erro" role="status"></p>
       <div class="acoes">
         <button type="button" class="botao botao-claro" data-fechar>cancelar</button>
         <button type="button" class="botao botao-claro" id="testar-temas">testar busca</button>
         <button type="submit" class="botao botao-forte">salvar</button>
-      </div>
-    </form>
-  </dialog>
-
-  <!-- Janela "minhas questões" -->
-  <dialog id="janela-importar" class="janela janela-larga" aria-labelledby="titulo-importar">
-    <form id="form-importar" novalidate>
-      <h2 id="titulo-importar">minhas questões</h2>
-      <p id="resumo-importar"></p>
-      <label for="nivel-importar">nível</label>
-      <select id="nivel-importar"></select>
-      <label for="texto-importar">cole as questões aqui</label>
-      <textarea id="texto-importar" rows="8" aria-describedby="resultado-importar"></textarea>
-      <p id="resultado-importar" class="erro" role="alert"></p>
-      <div class="acoes">
-        <button type="button" class="botao botao-claro" data-fechar>fechar</button>
-        <button type="submit" class="botao botao-forte">adicionar questões</button>
       </div>
     </form>
   </dialog>
@@ -73,11 +57,11 @@
 
   <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
 
-  <script src="dados.js?v=4"></script>
-  <script src="questoes/oclusao.js?v=4"></script>
-  <script src="banco.js?v=4"></script>
-  <script src="vocabulario.js?v=4"></script>
-  <script src="leitor.js?v=4"></script>
-  <script src="app.js?v=4"></script>
+  <script src="dados.js?v=5"></script>
+  <script src="questoes/oclusao.js?v=5"></script>
+  <script src="banco.js?v=5"></script>
+  <script src="vocabulario.js?v=5"></script>
+  <script src="leitor.js?v=5"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

@@ -18,10 +18,10 @@ const FOGUINHO_INICIAL = 0;
 const PERGUNTAS_POR_QUIZ = 30;
 
 const MODOS = [
-  { id: "facil",   nome: "modo fácil",   nivel: 1, descricao: "graduação: questões que você importar" },
-  { id: "medio",   nome: "modo médio",   nivel: 2, descricao: "graduação detalhada: questões que você importar" },
-  { id: "dificil", nome: "modo difícil", nivel: 3, descricao: "nível concurso (Enare e banco online)" },
-  { id: "extremo", nome: "modo extremo", nivel: 4, descricao: "nível pós (provas de seleção)" }
+  { id: "facil",   nome: "modo fácil",   nivel: 1, descricao: "básico do dia a dia do dentista" },
+  { id: "medio",   nome: "modo médio",   nivel: 2, descricao: "graduação, com mais detalhes" },
+  { id: "dificil", nome: "modo difícil", nivel: 3, descricao: "nível concurso e residência" },
+  { id: "extremo", nome: "modo extremo", nivel: 4, descricao: "nível mestrado e doutorado" }
 ];
 
 const MATERIAS_EXEMPLO = [
