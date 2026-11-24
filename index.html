@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quiz Diário</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
+  <link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+  <!-- As telas são desenhadas aqui dentro pelo app.js -->
+  <main id="tela" class="painel"></main>
+
+  <!-- Janela "nova matéria" -->
+  <dialog id="janela-materia" class="janela" aria-labelledby="titulo-janela-materia">
+    <form id="form-materia" novalidate>
+      <h2 id="titulo-janela-materia">nova matéria</h2>
+      <label for="nome-materia">nome da matéria</label>
+      <input id="nome-materia" type="text" maxlength="60" autocomplete="off" aria-describedby="erro-materia">
+      <p id="erro-materia" class="erro" role="alert"></p>
+      <div class="acoes">
+        <button type="button" class="botao botao-claro" data-fechar>cancelar</button>
+        <button type="submit" class="botao botao-forte">criar matéria</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Janela "temas da busca" -->
+  <dialog id="janela-temas" class="janela janela-larga" aria-labelledby="titulo-temas">
+    <form id="form-temas" novalidate>
+      <h2 id="titulo-temas">temas da busca</h2>
+      <label for="temas-en">palavras em inglês, separadas por vírgula</label>
+      <textarea id="temas-en" rows="4"></textarea>
+      <label for="temas-pt">palavras em português, separadas por vírgula</label>
+      <textarea id="temas-pt" rows="3"></textarea>
+      <fieldset id="temas-areas"><legend>áreas do banco em inglês</legend></fieldset>
+      <p id="resultado-temas" class="erro" role="status"></p>
+      <div class="acoes">
+        <button type="button" class="botao botao-claro" data-fechar>cancelar</button>
+        <button type="button" class="botao botao-claro" id="testar-temas">testar busca</button>
+        <button type="submit" class="botao botao-forte">salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Janela "minhas questões" -->
+  <dialog id="janela-importar" class="janela janela-larga" aria-labelledby="titulo-importar">
+    <form id="form-importar" novalidate>
+      <h2 id="titulo-importar">minhas questões</h2>
+      <p id="resumo-importar"></p>
+      <label for="nivel-importar">nível</label>
+      <select id="nivel-importar"></select>
+      <label for="texto-importar">cole as questões aqui</label>
+      <textarea id="texto-importar" rows="8" aria-describedby="resultado-importar"></textarea>
+      <p id="resultado-importar" class="erro" role="alert"></p>
+      <div class="acoes">
+        <button type="button" class="botao botao-claro" data-fechar>fechar</button>
+        <button type="submit" class="botao botao-forte">adicionar questões</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Janela de confirmação -->
+  <dialog id="janela-confirmar" class="janela" aria-labelledby="titulo-confirmar">
+    <h2 id="titulo-confirmar"></h2>
+    <p id="texto-confirmar"></p>
+    <div class="acoes">
+      <button type="button" class="botao botao-claro" data-fechar>cancelar</button>
+      <button type="button" class="botao botao-forte" id="sim-confirmar"></button>
+    </div>
+  </dialog>
+
+  <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
+
+  <script src="dados.js"></script>
+  <script src="questoes/oclusao.js"></script>
+  <script src="banco.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
