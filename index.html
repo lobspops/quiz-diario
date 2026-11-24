@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Quiz Diário</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
-  <link rel="stylesheet" href="estilo.css">
+  <link rel="stylesheet" href="estilo.css?v=4">
 </head>
 <body>
   <!-- As telas são desenhadas aqui dentro pelo app.js -->
@@ -29,6 +29,7 @@
   <dialog id="janela-temas" class="janela janela-larga" aria-labelledby="titulo-temas">
     <form id="form-temas" novalidate>
       <h2 id="titulo-temas">temas da busca</h2>
+      <p id="origem-temas" class="traducao"></p>
       <label for="temas-en">palavras em inglês, separadas por vírgula</label>
       <textarea id="temas-en" rows="4"></textarea>
       <label for="temas-pt">palavras em português, separadas por vírgula</label>
@@ -72,9 +73,11 @@
 
   <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
 
-  <script src="dados.js"></script>
-  <script src="questoes/oclusao.js"></script>
-  <script src="banco.js"></script>
-  <script src="app.js"></script>
+  <script src="dados.js?v=4"></script>
+  <script src="questoes/oclusao.js?v=4"></script>
+  <script src="banco.js?v=4"></script>
+  <script src="vocabulario.js?v=4"></script>
+  <script src="leitor.js?v=4"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

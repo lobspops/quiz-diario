@@ -51,9 +51,31 @@ const TEMAS_PADRAO = {
   }
 };
 
+// Termos tirados dos arquivos da matéria, menos os que a pessoa apagou.
+function temaAutomatico(materia) {
+  const lidos = Object.values(materia.lidos || {});
+  const fora = materia.removidas || { en: [], pt: [] };
+  // Poucos termos nos arquivos: usa também o nome da matéria e dos arquivos.
+  // (As matérias de fábrica já têm palavras padrão e não precisam disso.)
+  if (!TEMAS_PADRAO[materia.id] && new Set(lidos.flatMap((l) => l.en || [])).size < 3) lidos.push(temasDoNome(materia));
+  const juntar = (campo) => [...new Set(lidos.flatMap((l) => l[campo] || []))].filter((t) => !fora[campo].includes(t));
+  const areas = [...new Set(lidos.flatMap((l) => l.areas || []))];
+  return { en: juntar("en"), pt: juntar("pt"), areas };
+}
+
+// O que foi digitado vem primeiro; depois, os arquivos. As palavras
+// padrão só entram quando os arquivos ainda dizem pouco.
 function temaDe(materia) {
   const padrao = TEMAS_PADRAO[materia.id] || { areas: ["Dental"], en: [], pt: [] };
-  return { ...padrao, ...(materia.tema || {}) };
+  const auto = temaAutomatico(materia);
+  const manual = materia.tema;
+  const usaPadrao = !manual && (auto.en.length < 3 || materia.completar);
+  const base = manual || (usaPadrao ? padrao : { en: [], pt: [] });
+  return {
+    en: limparPalavras([...(base.en || []), ...auto.en]),
+    pt: limparPalavras([...(base.pt || []), ...auto.pt]),
+    areas: (manual && manual.areas && manual.areas.length && manual.areas) || (auto.areas.length && !usaPadrao ? auto.areas : [...new Set([...padrao.areas, ...auto.areas])])
+  };
 }
 
 /* ============================================================
@@ -87,7 +109,7 @@ async function consultar(dataset, onde, inicio, quantos) {
 // Só letras, números, espaço e hífen: o que sobra não quebra a consulta.
 function limparPalavras(lista) {
   return [...new Set(lista.map((p) => String(p).normalize("NFC").replace(/[^\p{L}\p{N} -]/gu, " ").replace(/\s+/g, " ").trim().toLowerCase()))]
-    .filter((p) => p.length >= 2).slice(0, 25);
+    .filter((p) => p.length >= 2).slice(0, 40);
 }
 
 function filtroIngles(tema) {
@@ -154,6 +176,11 @@ async function questoesIngles(materia, jaVista, quantas) {
     const velhas = caixa.lista.filter((q) => jaVista(q.chave));
     caixa.lista = novas.concat(velhas).slice(0, MAXIMO_GUARDADO);
   }
+  // Joga fora buscas antigas, de temas que mudaram.
+  const atuais = new Set(estado.materias.map((m) => filtroIngles(temaDe(m))));
+  for (const chave of Object.keys(banco)) {
+    if (chave !== "enare" && chave !== "contagens" && chave !== onde && !atuais.has(chave)) delete banco[chave];
+  }
   guardar(CHAVE_BANCO, banco);
   return { lista: caixa.lista, falhou };
 }
@@ -187,7 +214,7 @@ async function questoesPortugues(materia) {
   const lista = (banco.enare || []).filter((q) => {
     const texto = semAcento(q.pergunta + " " + q.opcoes.join(" "));
     // começo de palavra, para "dtm" ou "atm" não casarem no meio de outra
-    return palavras.some((p) => new RegExp("(^|[^a-z0-9])" + p).test(texto));
+    return palavras.some((p) => contarNoTexto(texto, p) > 0);
   });
   return { lista, falhou };
 }

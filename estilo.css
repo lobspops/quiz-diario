@@ -281,6 +281,13 @@ button.redondo:hover { background: #8c8c8c; }
   text-align: center;
 }
 .etiqueta.pdf { background: #c0322f; }
+.material .nome { flex: 1; min-width: 0; }
+.situacao-material { flex: none; max-width: 45%; font-size: 15px; color: var(--texto-suave); text-align: right; }
+.remover { flex: none; width: 30px; height: 30px; padding: 0; border-radius: 50%; font-size: 20px; line-height: 1; color: var(--texto-suave); }
+.remover:hover { background: var(--azul-escuro); color: var(--texto); }
+.versao { margin-top: 20px; font-size: 14px; color: var(--texto-suave); }
+.versao + .teste { margin-top: 6px; }
+#origem-temas { margin-bottom: 14px; }
 .vazio { padding: 14px 0; color: var(--texto-suave); }
 .dica { padding: 12px 24px 18px; text-align: center; font-size: 17px; color: var(--texto-suave); }
 .dica button { text-decoration: underline; text-underline-offset: 3px; padding: 2px; color: var(--texto); }

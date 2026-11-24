@@ -5,6 +5,7 @@
    ============================================================ */
 const CHAVE = "quiz-diario-v1";
 const UM_DIA = 24 * 60 * 60 * 1000;
+const VERSAO = 4; // mude junto com os ?v= do index.html
 
 // Botões de teste só aparecem no computador, nunca no site publicado.
 const MODO_TESTE = ["", "localhost", "127.0.0.1"].includes(location.hostname);
@@ -209,6 +210,7 @@ function telaInicial() {
         )
       )
     ),
+    el("p", { class: "versao" }, "versão " + VERSAO),
     ...(MODO_TESTE ? [el("div", { class: "teste" },
       el("span", {}, "para testar:"),
       el("button", { type: "button", onclick: simularDia }, "simular próximo dia"),
@@ -316,37 +318,92 @@ $("#form-materia").addEventListener("submit", (e) => {
   salvar();
   $("#janela-materia").close();
   ir("materia/" + nova.id);
-  avisar("Matéria criada.");
+  const temas = temaAutomatico(nova).en.length;
+  avisar(temas ? "Matéria criada com " + plural(temas, "tema", "temas") + " pelo nome." : "Matéria criada. Arraste arquivos para achar os temas.");
 });
 
 document.querySelectorAll("[data-fechar]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
 
 /* ============================================================
    8. MATÉRIA ABERTA (páginas 4 e 5 do PDF)
-   Guarda só o NOME do arquivo. O conteúdo não é lido.
+   O arquivo é lido aqui no navegador para achar os temas.
+   Só o nome e os temas ficam guardados.
    ============================================================ */
+const filaLeitura = [];
+const lendo = {};          // "matéria|arquivo" -> o que está acontecendo agora
+let lendoAgora = false;
+let redesenharMateriais = null;
+
+async function lerFila() {
+  if (lendoAgora) return;
+  lendoAgora = true;
+  while (filaLeitura.length) {
+    const { id, arquivo } = filaLeitura.shift();
+    const chave = id + "|" + arquivo.name;
+    const aviso = (texto) => { lendo[chave] = texto; if (redesenharMateriais) redesenharMateriais(); };
+    let resultado;
+    try {
+      const texto = await lerArquivo(arquivo, aviso);
+      resultado = texto.replace(/\s/g, "").length < 20
+        ? { en: [], pt: [], areas: [], erro: "não encontrei texto" }
+        : await temasDoTexto(texto, aviso);
+    } catch (e) {
+      resultado = { en: [], pt: [], areas: [], erro: e.name === "PasswordException" ? "protegido por senha" : e.message || "não consegui ler" };
+    }
+    delete lendo[chave];
+    const materia = materiaPorId(id);
+    // a matéria ou o arquivo podem ter sido apagados durante a leitura
+    if (materia && materia.materiais.includes(arquivo.name)) {
+      materia.lidos = { ...(materia.lidos || {}), [arquivo.name]: resultado };
+      materia.completar = false;
+      if (!materia.tema && TEMAS_PADRAO[materia.id]) {
+        try { materia.completar = (await contarIngles(temaDe(materia))) < 60; } catch (e) { materia.completar = true; }
+      }
+      salvar();
+      const n = resultado.en.length;
+      avisar(resultado.erro ? arquivo.name + ": " + resultado.erro + "." : n ? plural(n, "tema encontrado", "temas encontrados") + " em " + arquivo.name + "." : "Nenhum tema reconhecido em " + arquivo.name + ".");
+    }
+    if (redesenharMateriais) redesenharMateriais();
+  }
+  lendoAgora = false;
+}
+
+function situacaoMaterial(materia, nome) {
+  const agora = lendo[materia.id + "|" + nome];
+  if (agora) return agora;
+  const lido = (materia.lidos || {})[nome];
+  if (!lido) return "não lido: arraste de novo";
+  return lido.erro || (lido.en.length ? plural(lido.en.length, "tema", "temas") : "nenhum tema");
+}
+
 function telaMateria(materia) {
   const lista = el("ul", { class: "materiais" });
   const desenharLista = () => {
     lista.replaceChildren(...(materia.materiais.length
-      ? materia.materiais.map(linhaMaterial)
+      ? materia.materiais.map((nome) => linhaMaterial(materia, nome, desenharLista))
       : [el("li", { class: "vazio" }, "Nenhum material ainda.")]));
   };
   desenharLista();
+  redesenharMateriais = () => { if (lista.isConnected) desenharLista(); };
 
-  const adicionar = (nomes) => {
-    const novos = [...new Set(nomes)].filter((n) => !materia.materiais.includes(n));
-    if (!novos.length) { avisar(nomes.length ? "Esse material já está na lista." : "Arraste arquivos, não pastas ou textos."); return; }
-    materia.materiais.push(...novos);
+  // Arquivo repetido é lido de novo, para atualizar os temas.
+  const adicionar = (arquivos) => {
+    if (!arquivos.length) { avisar("Arraste arquivos, não pastas ou textos."); return; }
+    for (const arquivo of arquivos) {
+      if (!materia.materiais.includes(arquivo.name)) materia.materiais.push(arquivo.name);
+      const chave = materia.id + "|" + arquivo.name;
+      if (lendo[chave]) continue;
+      lendo[chave] = "na fila…";
+      filaLeitura.push({ id: materia.id, arquivo });
+    }
     salvar();
     desenharLista();
     lista.scrollTop = lista.scrollHeight;
-    avisar(plural(novos.length, "material adicionado", "materiais adicionados") + " (só o nome).");
+    lerFila();
   };
 
-  const escolher = el("input", { type: "file", multiple: true, hidden: true, onchange: (e) => {
-    const nomes = [...e.target.files].map((f) => f.name);
-    if (nomes.length) adicionar(nomes);
+  const escolher = el("input", { type: "file", multiple: true, hidden: true, accept: ".pdf,.docx,.pptx,.txt,.md,.png,.jpg,.jpeg,.webp,.bmp", onchange: (e) => {
+    if (e.target.files.length) adicionar([...e.target.files]);
     e.target.value = "";
   } });
 
@@ -362,7 +419,7 @@ function telaMateria(materia) {
         const entrada = i.webkitGetAsEntry && i.webkitGetAsEntry();
         return !(entrada && entrada.isDirectory);
       }).map((i) => i.getAsFile()).filter(Boolean);
-      adicionar(arquivos.map((f) => f.name));
+      adicionar(arquivos);
     }
   },
     lista,
@@ -398,6 +455,10 @@ function abrirTemas(materia) {
   $("#temas-en").value = tema.en.join(", ");
   $("#temas-pt").value = tema.pt.join(", ");
   $("#resultado-temas").textContent = "";
+  const auto = temaAutomatico(materia).en.length;
+  $("#origem-temas").textContent = auto
+    ? plural(auto, "palavra em inglês foi preenchida", "palavras em inglês foram preenchidas") + " sozinha" + (auto === 1 ? "" : "s") + ". Apague as que não servirem."
+    : "Adicione arquivos à matéria para preencher sozinho, ou digite aqui.";
   $("#temas-areas").replaceChildren(el("legend", {}, "áreas do banco em inglês"), ...AREAS.map(([id, nome]) =>
     el("label", {}, el("input", { type: "checkbox", value: id, checked: tema.areas.includes(id) }), nome)));
   $("#janela-temas").showModal();
@@ -419,7 +480,7 @@ $("#testar-temas").addEventListener("click", async () => {
   try {
     const tema = temaDigitado();
     const ingles = await contarIngles(tema);
-    const portugues = (await questoesPortugues({ id: "", tema })).lista.length;
+    const portugues = (await questoesPortugues({ id: "", tema, lidos: {} })).lista.length;
     saida.textContent = "Encontradas: " + ingles + " em inglês e " + portugues + " em português.";
   } catch (e) {
     saida.textContent = "O banco não respondeu. Confira a internet e tente de novo.";
@@ -429,7 +490,25 @@ $("#testar-temas").addEventListener("click", async () => {
 
 $("#form-temas").addEventListener("submit", (e) => {
   e.preventDefault();
-  materiaAberta.tema = temaDigitado();
+  // Separa o que é da pessoa do que veio dos arquivos: o digitado fica
+  // para sempre, e o que ela apagou não volta nas próximas leituras.
+  const digitado = temaDigitado();
+  const mostrado = temaDe(materiaAberta);
+  const auto = temaAutomatico(materiaAberta);
+  const fora = materiaAberta.removidas || { en: [], pt: [] };
+  const semMudanca = ["en", "pt", "areas"].every((c) => digitado[c].join() === mostrado[c].join());
+  if (!semMudanca) {
+    const mudouAreas = digitado.areas.join() !== mostrado.areas.join();
+    const areasAntes = materiaAberta.tema && materiaAberta.tema.areas;
+    const novo = mudouAreas ? { areas: digitado.areas } : areasAntes ? { areas: areasAntes } : {};
+    const removidas = {};
+    for (const c of ["en", "pt"]) {
+      novo[c] = digitado[c].filter((t) => !auto[c].includes(t));
+      removidas[c] = [...new Set([...fora[c], ...auto[c].filter((t) => !digitado[c].includes(t))])].filter((t) => !digitado[c].includes(t));
+    }
+    materiaAberta.tema = novo;
+    materiaAberta.removidas = removidas;
+  }
   salvar();
   $("#janela-temas").close();
   avisar("Temas salvos.");
@@ -484,12 +563,19 @@ $("#form-importar").addEventListener("submit", (e) => {
     : [plural(novas, "questão adicionada", "questões adicionadas") + (repetidas ? ", " + plural(repetidas, "repetida", "repetidas") : "") + ".", ...problemas.slice(0, 5)].join("\n");
 });
 
-function linhaMaterial(nome) {
+function linhaMaterial(materia, nome, aoRemover) {
   const ponto = nome.lastIndexOf(".");
   const tipo = ponto > 0 ? nome.slice(ponto + 1, ponto + 5).toUpperCase() : "ARQ";
   return el("li", { class: "material" },
     el("span", { class: "etiqueta" + (tipo === "PDF" ? " pdf" : ""), "aria-hidden": "true" }, tipo),
-    el("span", {}, nome));
+    el("span", { class: "nome" }, nome),
+    el("span", { class: "situacao-material" }, situacaoMaterial(materia, nome)),
+    el("button", { type: "button", class: "remover", "aria-label": "Remover " + nome, title: "remover", onclick: () => {
+      materia.materiais = materia.materiais.filter((n) => n !== nome);
+      if (materia.lidos) delete materia.lidos[nome];
+      salvar();
+      aoRemover();
+    } }, "×"));
 }
 
 // Soltar um arquivo fora da área não deve tirar a pessoa do app.

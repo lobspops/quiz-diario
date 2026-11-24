@@ -201,6 +201,37 @@ function acharTermos(textoOriginal) {
   return { bons, livres, texto };
 }
 
+/* Nome de disciplina -> grupo do vocabulário. */
+const GRUPO_PELO_NOME = {
+  oclusao: ["oclus", "dtm"], anatomia: ["anatomia"], radiologia: ["radiolog", "imaginolog"],
+  estomatologia: ["estomatolog", "semiolog", "diagnostico bucal", "diagnostico oral"], patologia: ["patolog"],
+  fisiologia: ["fisiolog"], histologia: ["histolog", "embriolog"], dentistica: ["dentistica", "cariolog", "materiais dentarios"],
+  endodontia: ["endodont"], periodontia: ["periodont"], protese: ["protese", "reabilitacao oral", "implantodont"],
+  cirurgia: ["cirurgia", "bucomaxilo", "traumatolog"], farmacologia: ["farmaco", "anestesiolog", "terapeutica"],
+  ortodontia: ["ortodont"], odontopediatria: ["odontopediatr", "pediatr"], microbiologia: ["microbiolog", "imunolog"],
+  saudecoletiva: ["saude coletiva", "saude publica", "epidemiolog", "preventiva"]
+};
+const guardadoNome = new Map();
+
+// Temas tirados só dos nomes, sem precisar ler nenhum arquivo.
+function temasDoNome(materia) {
+  const limpo = (t) => semAcento(t).replace(/\.[a-z0-9]{2,4}$/, "").replace(/[_.-]+/g, " ");
+  const nome = limpo(materia.nome || "");
+  const tudo = [nome, ...(materia.materiais || []).map(limpo)].join(" . ");
+  if (!guardadoNome.has(tudo)) {
+    const achados = VOCABULARIO.filter((v) => v.pt.some((t) => contarNoTexto(tudo, t)));
+    const grupos = Object.keys(GRUPO_PELO_NOME).filter((g) => GRUPO_PELO_NOME[g].some((t) => contarNoTexto(nome, t)));
+    const doGrupo = TEMAS_PADRAO[materia.id] ? [] : VOCABULARIO.filter((v) => grupos.includes(v.grupo)).slice(0, 25);
+    const todos = [...new Set([...achados, ...doGrupo])];
+    guardadoNome.set(tudo, {
+      en: todos.map((v) => v.en),
+      pt: todos.map((v) => v.pt[0]),
+      areas: todos.length ? ["Dental", ...grupos.map((g) => AREA_DO_GRUPO[g]).filter(Boolean)] : []
+    });
+  }
+  return guardadoNome.get(tudo);
+}
+
 let tradutorVolta = null;
 async function paraIngles(palavras, original) {
   if (!palavras.length || !temTradutor()) return [];
