@@ -5,7 +5,7 @@
    ============================================================ */
 const CHAVE = "quiz-diario-v1";
 const UM_DIA = 24 * 60 * 60 * 1000;
-const VERSAO = 5; // mude junto com os ?v= do index.html
+const VERSAO = 6; // mude junto com os ?v= do index.html
 
 // Botões de teste só aparecem no computador, nunca no site publicado.
 const MODO_TESTE = ["", "localhost", "127.0.0.1"].includes(location.hostname);

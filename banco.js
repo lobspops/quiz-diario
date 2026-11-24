@@ -299,42 +299,37 @@ async function questoesPortugues(materia) {
 /* ============================================================
    TRADUÇÃO (tradutor embutido do Chrome, no computador)
    ============================================================ */
-const CHAVE_TRADUCOES = "quiz-diario-traducoes-v1";
+const CHAVE_TRADUCOES = "quiz-diario-traducoes-v2";
+try { localStorage.removeItem("quiz-diario-traducoes-v1"); } catch (e) { /* sem memória */ }
 const MAXIMO_TRADUCOES = 1500;
 let traducoes = lerGuardado(CHAVE_TRADUCOES, {});
 
-// Termos que, sozinhos numa alternativa, têm tradução fixa.
-const GLOSSARIO = {
-  "all of the above": "Todas as anteriores", "none of the above": "Nenhuma das anteriores",
-  "all": "Todas", "none": "Nenhuma", "both": "Ambas", "true": "Verdadeiro", "false": "Falso",
-  "overbite": "Sobremordida", "overjet": "Sobressaliência", "deep bite": "Mordida profunda",
-  "open bite": "Mordida aberta", "cross bite": "Mordida cruzada", "crossbite": "Mordida cruzada",
-  "centric relation": "Relação cêntrica", "centric occlusion": "Oclusão cêntrica",
-  "deciduous teeth": "Dentes decíduos", "primary teeth": "Dentes decíduos", "permanent teeth": "Dentes permanentes",
-  "enamel": "Esmalte", "dentin": "Dentina", "dentine": "Dentina", "cementum": "Cemento", "pulp": "Polpa",
-  "gingiva": "Gengiva", "alveolar bone": "Osso alveolar", "periodontal ligament": "Ligamento periodontal",
-  "incisors": "Incisivos", "canine": "Canino", "canines": "Caninos", "premolars": "Pré-molares", "molars": "Molares",
-  "buccal": "Vestibular", "lingual": "Lingual", "palatal": "Palatina", "mesial": "Mesial", "distal": "Distal",
-  "masseter": "Masseter", "temporalis": "Temporal", "lateral pterygoid": "Pterigóideo lateral",
-  "medial pterygoid": "Pterigóideo medial", "buccinator": "Bucinador", "digastric": "Digástrico",
-  "facial nerve": "Nervo facial", "trigeminal nerve": "Nervo trigêmeo", "lingual nerve": "Nervo lingual",
-  "inferior alveolar nerve": "Nervo alveolar inferior", "chorda tympani": "Corda do tímpano",
-  "parotid": "Parótida", "parotid gland": "Glândula parótida", "submandibular gland": "Glândula submandibular",
-  "sublingual gland": "Glândula sublingual", "dentigerous cyst": "Cisto dentígero", "radicular cyst": "Cisto radicular",
-  "odontogenic keratocyst": "Ceratocisto odontogênico", "ameloblastoma": "Ameloblastoma",
-  "lichen planus": "Líquen plano", "leukoplakia": "Leucoplasia", "pemphigus vulgaris": "Pênfigo vulgar",
-  "squamous cell carcinoma": "Carcinoma espinocelular", "x-ray": "Raio X", "bitewing": "Interproximal"
-};
-
-// Correções na frase traduzida, aplicadas só se o inglês tiver o termo.
+// Correções para quando o tradutor não respeita o termo do glossário:
+// valem só se o inglês tiver o termo.
 const CORRECOES = [
+  [/\b(canine|cuspid)s?\b/i, /\b(cachorro|cão|cães|cachorros)\b/gi, "canino"],
   [/\boverjet\b/i, /\b(overjet|sobrejato|excesso de jato)\b/gi, "sobressaliência"],
   [/\boverbite\b/i, /\b(overbite|mordida excessiva|sobremordida excessiva)\b/gi, "sobremordida"],
-  [/\b(deciduous|primary) (teeth|tooth|dentition)\b/i, /\bprimári([ao]s?)\b/gi, "decídu$1"],
-  [/\bbuccal (surface|cusp|side|aspect)\b/i, /\bbucal\b/gi, "vestibular"],
-  [/\b(bite ?wing)\b/i, /\b(asas? de mordida|bite ?wing|mordida de asa)\b/gi, "interproximal"],
-  [/\bcrown\b/i, /\bcoroa dentária dentária\b/gi, "coroa dentária"],
-  [/\bsquamous cell carcinoma\b/i, /\bcarcinoma de células escamosas\b/gi, "carcinoma espinocelular"]
+  [/\b(deciduous|primary) (teeth|tooth|dentition|molars?|incisors?|canines?)\b/i, /\bprimári([ao]s?)\b/gi, "decídu$1"],
+  [/\bbuccal\b/i, /\b(face|superfície|cúspide|parede|lado|raiz) bucal\b/gi, "$1 vestibular"],
+  [/\bbite ?wing\b/i, /\b(asas? de mordida|bite ?wing|mordida de asa)\b/gi, "interproximal"],
+  [/\bsquamous cell carcinoma\b/i, /\bcarcinoma de células escamosas\b/gi, "carcinoma espinocelular"],
+  [/\bdentures?\b/i, /\bdentadura(s?)\b/gi, "prótese$1"],
+  [/\bimpressions?\b/i, /\bimpress(ão|ões)\b/gi, (m, f) => (f === "ão" ? "moldagem" : "moldagens")],
+  [/\bfiles?\b/i, /\barquivo(s?)\b/gi, "lima$1"],
+  [/\bburs?\b/i, /\brebarba(s?)\b/gi, "broca$1"],
+  [/\bclasps?\b/i, /\bfecho(s?)\b/gi, "grampo$1"],
+  [/\bpockets?\b/i, /\bbolso(s?)\b/gi, "bolsa$1"],
+  [/\bcrowding\b/i, /\b(aglomeração|superlotação|lotação)\b/gi, "apinhamento"],
+  [/\bflaps?\b/i, /\baba(s?)\b/gi, "retalho$1"],
+  [/\broots? planing\b/i, /\b(aplainamento|planejamento) (da raiz|radicular)\b/gi, "alisamento radicular"],
+  [/\bscaling\b/i, /\b(dimensionamento|escalonamento|escamação)\b/gi, "raspagem"],
+  [/\bprobing\b/i, /\binvestigação\b/gi, "sondagem"],
+  [/\bcast\b/i, /\b(elenco|gesso fundido)\b/gi, "modelo"],
+  [/\bsetting\b/i, /\bconfiguração\b/gi, "presa"],
+  [/\babutments?\b/i, /\b(pilastra|encontro|contraforte)(s?)\b/gi, "pilar"],
+  [/\bsocket\b/i, /\b(soquete|tomada)\b/gi, "alvéolo"],
+  [/\bsyndrome\b/i, /\bsíndroma\b/gi, "síndrome"]
 ];
 
 let tradutor = null; // promessa do tradutor, depois do primeiro clique
@@ -370,12 +365,27 @@ function comLimite(promessa, ms) {
 async function traduzirTexto(t, ingles) {
   const limpo = ingles.trim();
   if (!limpo) return "";
-  const fixo = GLOSSARIO[limpo.toLowerCase().replace(/[.:]$/, "")];
+  const fixo = termoInteiro(limpo);
   if (fixo) return fixo;
   if (!/[a-z]{2}/i.test(limpo)) return limpo; // números, fórmulas
-  let saida = await comLimite(t.translate(limpo), 30000);
-  for (const [seTiver, errado, certo] of CORRECOES) if (seTiver.test(limpo)) saida = saida.replace(errado, certo);
-  return saida;
+  const traduzir = (s) => comLimite(t.translate(s), 30000);
+  const { texto, usados } = aplicarGlossario(limpo);
+
+  // Primeira tentativa: frase com os termos já em português. Só vale se
+  // o tradutor manteve os termos; senão, traduz o inglês puro e corrige.
+  if (usados.length) {
+    const saida = await traduzir(texto);
+    const achatado = semAcento(saida);
+    const manteve = usados.filter((u) => achatado.includes(semAcento(u))
+      || u.split(" ").every((p) => p.length < 4 || achatado.includes(semAcento(p).slice(0, -2)))).length;
+    if (manteve / usados.length >= 0.75) return corrigir(limpo, saida);
+  }
+  return corrigir(limpo, await traduzir(limpo));
+}
+
+function corrigir(ingles, saida) {
+  for (const [seTiver, errado, certo] of CORRECOES) if (seTiver.test(ingles)) saida = saida.replace(errado, certo);
+  return saida.replace(/\s+([,.;:?!])/g, "$1");
 }
 
 const traduzindo = new Map();
