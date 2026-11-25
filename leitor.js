@@ -2,7 +2,7 @@
 
 /* ============================================================
    LEITOR DE ARQUIVOS
-   Lê o texto dentro do próprio navegador. Nada é enviado.
+   Lê o texto dentro do próprio navegador. Esta parte não envia nada.
    ============================================================ */
 const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
 const TESSERACT = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
@@ -10,12 +10,20 @@ const MAXIMO_ARQUIVO = 80 * 1024 * 1024;
 const MAXIMO_TEXTO = 400000;
 const MAXIMO_OCR = 15; // páginas ou imagens por arquivo
 
+// Impressão digital dos programas externos: se mudarem, o navegador recusa.
+const DIGITAIS = {
+  [PDFJS + "pdf.min.js"]: "sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e",
+  [TESSERACT]: "sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F"
+};
+
 const programas = {};
 function carregarPrograma(url) {
   if (!programas[url]) {
     programas[url] = new Promise((pronto, falha) => {
       const s = document.createElement("script");
       s.src = url;
+      s.integrity = DIGITAIS[url];
+      s.crossOrigin = "anonymous";
       s.onload = pronto;
       s.onerror = () => { delete programas[url]; s.remove(); falha(new Error("sem internet para carregar o leitor")); };
       document.head.append(s);
@@ -27,17 +35,19 @@ function carregarPrograma(url) {
 const extensao = (nome) => (nome.match(/\.([a-z0-9]+)$/i) || ["", ""])[1].toLowerCase();
 const EH_IMAGEM = /^(png|jpe?g|webp|bmp)$/;
 
+// Devolve { texto, paginas: [{ n, texto }] }; n é 0 quando não há página.
 async function lerArquivo(arquivo, aviso) {
   const tipo = extensao(arquivo.name);
   if (arquivo.size > MAXIMO_ARQUIVO) throw new Error("arquivo grande demais (limite de 80 MB)");
-  let texto;
-  if (tipo === "pdf") texto = await lerPdf(arquivo, aviso);
-  else if (tipo === "docx" || tipo === "pptx") texto = await lerOffice(arquivo, tipo, aviso);
-  else if (tipo === "txt" || tipo === "md") texto = await arquivo.text();
-  else if (EH_IMAGEM.test(tipo)) texto = await lerImagens([arquivo], aviso);
+  const simples = (texto) => ({ texto, paginas: [{ n: 0, texto }] });
+  let lido;
+  if (tipo === "pdf") lido = await lerPdf(arquivo, aviso);
+  else if (tipo === "docx" || tipo === "pptx") lido = await lerOffice(arquivo, tipo, aviso);
+  else if (tipo === "txt" || tipo === "md") lido = simples(await arquivo.text());
+  else if (EH_IMAGEM.test(tipo)) lido = { texto: await lerImagens([arquivo], aviso), paginas: [] };
   else if (tipo === "doc" || tipo === "ppt") throw new Error("formato antigo: salve como ." + tipo + "x");
   else throw new Error("tipo de arquivo não lido");
-  return texto.slice(0, MAXIMO_TEXTO);
+  return { texto: lido.texto.slice(0, MAXIMO_TEXTO), paginas: lido.paginas };
 }
 
 /* ---------- PDF ---------- */
@@ -61,6 +71,7 @@ async function lerPdf(arquivo, aviso) {
       partes.push(texto);
       tamanho += texto.length;
     }
+    const lidas = partes.map((texto, i) => ({ n: i + 1, texto }));
     // PDF escaneado: quase nenhuma página tem texto.
     if (vazias.length > paginas / 2) {
       const imagens = [];
@@ -76,7 +87,7 @@ async function lerPdf(arquivo, aviso) {
       }
       partes.push(await lerImagens(imagens, aviso));
     }
-    return partes.join("\n");
+    return { texto: partes.join("\n"), paginas: lidas };
   } finally {
     tarefa.destroy();
   }
@@ -92,8 +103,10 @@ async function lerOffice(arquivo, tipo, aviso) {
   const nomes = Object.keys(zip).filter((n) => querTexto.test(n))
     .sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
   if (!nomes.length) throw new Error("arquivo danificado ou protegido por senha");
-  const partes = [];
+  const porNumero = new Map();
   for (const nome of nomes) {
+    const n = tipo === "pptx" ? Number(nome.match(/(\d+)\.xml$/)[1]) : 0;
+    const partes = porNumero.get(n) || porNumero.set(n, []).get(n);
     const xml = new TextDecoder().decode(await zip[nome](20 * 1024 * 1024));
     const doc = new DOMParser().parseFromString(xml, "application/xml");
     for (const paragrafo of doc.querySelectorAll("p")) {
@@ -101,15 +114,19 @@ async function lerOffice(arquivo, tipo, aviso) {
       if (texto.trim()) partes.push(texto);
     }
   }
-  const texto = partes.join("\n");
+  const paginas = [...porNumero].sort((a, b) => a[0] - b[0]).map(([n, partes]) => ({ n, texto: partes.join("\n") }));
+  const texto = paginas.map((p) => p.texto).join("\n");
   // Slides feitos só de imagens: tenta ler o texto delas.
   if (texto.length < 200) {
     const fotos = Object.keys(zip).filter((n) => /\/media\//.test(n) && EH_IMAGEM.test(extensao(n))).slice(0, MAXIMO_OCR);
     const imagens = [];
     for (const nome of fotos) imagens.push(new Blob([await zip[nome](20 * 1024 * 1024)]));
-    if (imagens.length) return texto + "\n" + await lerImagens(imagens, aviso);
+    if (imagens.length) {
+      const dasFotos = await lerImagens(imagens, aviso);
+      return { texto: texto + "\n" + dasFotos, paginas: [...paginas, { n: 0, texto: dasFotos }] };
+    }
   }
-  return texto;
+  return { texto, paginas };
 }
 
 // Devolve { nome: função que entrega os bytes }.

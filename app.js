@@ -5,7 +5,7 @@
    ============================================================ */
 const CHAVE = "quiz-diario-v1";
 const UM_DIA = 24 * 60 * 60 * 1000;
-const VERSAO = 6; // mude junto com os ?v= do index.html
+const VERSAO = 7; // mude junto com os ?v= do index.html
 
 // Botões de teste só aparecem no computador, nunca no site publicado.
 const MODO_TESTE = ["", "localhost", "127.0.0.1"].includes(location.hostname);
@@ -143,6 +143,7 @@ function desenhar() {
   if (rota !== "quiz") quiz = null;
   busca++;
   carregando = false;
+  if (controleIA) controleIA.abort();
 
   if (rota === "selecionar") return telaSelecionar();
   if (rota === "cadastrar") return telaCadastrar();
@@ -162,12 +163,12 @@ function telaInicial() {
 
   const detalhe = el("p", { class: "detalhe", "aria-live": "polite" });
   const atualizarDetalhe = () => {
-    const semTema = materiasSelecionadas().filter((m) => !filtroIngles(temaDe(m)));
+    const semTema = materiasSelecionadas().filter((m) => !filtroIngles(temaDe(m)) && !(temIA() && m.materiais.some((n) => naIA.has(idArquivo(m.id, n)))));
     detalhe.replaceChildren(...(materiasSelecionadas().length === 0
       ? ["nenhuma matéria selecionada"]
       : [modoAtual().descricao, el("br"), semTema.length
           ? "sem temas: " + semTema.map((m) => m.nome).join(", ")
-          : "até " + PERGUNTAS_POR_QUIZ + " perguntas" + (temTradutor() ? "" : " · sem tradutor neste navegador")]));
+          : "até " + PERGUNTAS_POR_QUIZ + " perguntas" + (temIA() ? " · IA a partir dos slides" : "")]));
   };
 
   const modos = MODOS.map((modo) => el("label", { class: "modo" },
@@ -203,7 +204,9 @@ function telaInicial() {
         )
       )
     ),
-    el("p", { class: "versao" }, "versão " + VERSAO),
+    el("p", { class: "versao" },
+      "versão " + VERSAO + " · IA " + (temIA() ? "ligada" : "desligada") + " ",
+      el("button", { type: "button", class: "link", onclick: abrirIA }, "configurar IA")),
     ...(MODO_TESTE ? [el("div", { class: "teste" },
       el("span", {}, "para testar:"),
       el("button", { type: "button", onclick: simularDia }, "simular próximo dia"),
@@ -222,6 +225,7 @@ function simularDia() {
 function restaurar() {
   confirmar("restaurar exemplo?", "As matérias e os materiais que você adicionou serão apagados e o foguinho volta a " + FOGUINHO_INICIAL + ".", "restaurar", () => {
     estado = estadoInicial();
+    apagarTudoIA();
     salvar();
     telaInicial();
     avisar("Exemplo restaurado.");
@@ -320,7 +324,7 @@ document.querySelectorAll("[data-fechar]").forEach((b) => b.addEventListener("cl
 /* ============================================================
    8. MATÉRIA ABERTA (páginas 4 e 5 do PDF)
    O arquivo é lido aqui no navegador para achar os temas.
-   Só o nome e os temas ficam guardados.
+   O arquivo fica guardado só neste navegador, para a IA usar.
    ============================================================ */
 const filaLeitura = [];
 const lendo = {};          // "matéria|arquivo" -> o que está acontecendo agora
@@ -335,12 +339,18 @@ async function lerFila() {
     const chave = id + "|" + arquivo.name;
     const aviso = (texto) => { lendo[chave] = texto; if (redesenharMateriais) redesenharMateriais(); };
     let resultado;
+    let paginas = [];
+    let abriu = true;
     try {
-      const texto = await lerArquivo(arquivo, aviso);
+      const lido = await lerArquivo(arquivo, aviso);
+      const texto = lido.texto;
+      paginas = lido.paginas;
       resultado = texto.replace(/\s/g, "").length < 20
         ? { en: [], pt: [], areas: [], erro: "não encontrei texto" }
         : await temasDoTexto(texto, aviso);
     } catch (e) {
+      // imagem cujo texto não foi lido ainda serve para a IA
+      abriu = EH_IMAGEM.test(extensao(arquivo.name));
       resultado = { en: [], pt: [], areas: [], erro: e.name === "PasswordException" ? "protegido por senha" : e.message || "não consegui ler" };
     }
     delete lendo[chave];
@@ -348,6 +358,9 @@ async function lerFila() {
     // a matéria ou o arquivo podem ter sido apagados durante a leitura
     if (materia && materia.materiais.includes(arquivo.name)) {
       materia.lidos = { ...(materia.lidos || {}), [arquivo.name]: resultado };
+      let erroGuarda = "";
+      try { if (abriu) await guardarArquivoIA(id, arquivo, paginas); } catch (e) { erroGuarda = e.message; }
+      if (erroGuarda) avisar(arquivo.name + ": " + erroGuarda + ".");
       materia.completar = false;
       if (!materia.tema && TEMAS_PADRAO[materia.id]) {
         try { materia.completar = (await contarIngles(temaDe(materia))) < 60; } catch (e) { materia.completar = true; }
@@ -366,7 +379,10 @@ function situacaoMaterial(materia, nome) {
   if (agora) return agora;
   const lido = (materia.lidos || {})[nome];
   if (!lido) return "não lido: arraste de novo";
-  return lido.erro || (lido.en.length ? plural(lido.en.length, "tema", "temas") : "nenhum tema");
+  const guardado = naIA.has(idArquivo(materia.id, nome));
+  const temas = lido.erro || (lido.en.length ? plural(lido.en.length, "tema", "temas") : "nenhum tema");
+  if (guardado) return temas + " · pronto para a IA";
+  return temas + (!lido.erro && temIA() ? " · arraste de novo para a IA" : "");
 }
 
 function telaMateria(materia) {
@@ -526,6 +542,7 @@ function linhaMaterial(materia, nome, aoRemover) {
     el("button", { type: "button", class: "remover", "aria-label": "Remover " + nome, title: "remover", onclick: () => {
       materia.materiais = materia.materiais.filter((n) => n !== nome);
       if (materia.lidos) delete materia.lidos[nome];
+      apagarArquivoIA(materia.id, nome);
       salvar();
       aoRemover();
     } }, "×"));
@@ -575,20 +592,32 @@ function escolher(filas) {
   return embaralhar(escolhidas);
 }
 
-// Junta o que está no site com os bancos abertos, no nível do modo.
-async function montarPerguntas() {
+// Perguntas da IA primeiro; o que faltar vem do site e dos bancos abertos.
+async function montarPerguntas(sinal) {
   const nivel = modoAtual().nivel;
   const jaVista = (chave) => Boolean(estado.vistas[chave] || estado.ocultas[chave]);
+  const materias = materiasSelecionadas();
+  const cota = Math.ceil(PERGUNTAS_POR_QUIZ / materias.length);
+  const reserva = { pedidos: LOTES_POR_QUIZ };
   let falhou = false;
-  const filas = await Promise.all(materiasSelecionadas().map(async (materia) => {
-    const fila = filaLocal(materia);
+  let erroIA = null;
+  let semArquivo = 0;
+  const filas = await Promise.all(materias.map(async (materia) => {
+    const daIA = await questoesIA(materia, nivel, cota, jaVista, reserva, sinal);
+    erroIA = erroIA || daIA.erro;
+    if (daIA.semArquivo) semArquivo++;
+    const fila = daIA.lista;
+    const bastante = materias.length === 1 ? PERGUNTAS_POR_QUIZ : cota;
+    const ineditas = () => fila.filter((p) => !p.exemplo && !jaVista(p.chave)).length;
+    if (ineditas() >= bastante) return fila;
+    fila.push(...filaLocal(materia));
     const comum = { materia: materia.nome };
     if (nivel === 2 || nivel === 3) {
       const pt = await questoesPortugues(materia);
       falhou = falhou || pt.falhou;
       fila.push(...pt.lista.filter((q) => q.nivel === nivel).map((q) => ({ ...q, ...comum, peso: 1 })));
     }
-    const prontas = fila.filter((p) => !p.exemplo && !jaVista(p.chave)).length;
+    const prontas = ineditas();
     if (prontas < PERGUNTAS_POR_QUIZ) {
       const en = await questoesIngles(materia, jaVista, PERGUNTAS_POR_QUIZ - prontas, nivel);
       falhou = falhou || en.falhou;
@@ -596,10 +625,16 @@ async function montarPerguntas() {
     }
     return fila;
   }));
-  return { perguntas: escolher(filas), falhou };
+  return { perguntas: escolher(filas), falhou, erroIA, semArquivo: semArquivo === materias.length };
 }
 
 function linhaFonte(p) {
+  if (p.ia) {
+    const onde = p.arquivo + (p.pagina ? ", " + (/\.pptx$/i.test(p.arquivo) ? "slide " : "página ") + p.pagina : "");
+    const situacao = p.nivel >= 3 ? "assunto do slide, aprofundado pela IA e não conferido"
+      : p.conferida ? "trecho achado no arquivo: “" + p.trecho + "”" : "trecho não conferido";
+    return el("p", { class: "fonte" }, "Criada por IA a partir de " + onde + " · " + situacao);
+  }
   if (p.origem) {
     const origem = ORIGENS[p.origem];
     return el("p", { class: "fonte" }, "Fonte: ",
@@ -615,6 +650,7 @@ function linhaFonte(p) {
 
 let busca = 0;          // número da busca atual; mudar de tela cancela
 let carregando = false;
+let controleIA = null;  // para parar a IA sem sair do quiz
 
 async function comecarQuiz() {
   if (carregando) return;
@@ -627,8 +663,9 @@ async function comecarQuiz() {
   const minha = ++busca;
   carregando = true;
   ligarTradutor((p) => avisar("Baixando o tradutor do Chrome: " + p + "%"));
+  controleIA = new AbortController();
   telaCarregando();
-  const { perguntas, falhou } = await montarPerguntas();
+  const { perguntas, falhou, erroIA, semArquivo } = await montarPerguntas(controleIA.signal);
   if (minha !== busca) return; // a pessoa saiu durante a busca
   carregando = false;
   if (!perguntas.length) {
@@ -638,13 +675,20 @@ async function comecarQuiz() {
   }
   quiz = { modo: modo.nome, perguntas, atual: 0, respostas: [], original: {}, terminou: false };
   ir("quiz");
-  if (falhou) avisar("O banco online não respondeu. Usando as questões guardadas.");
+  if (erroIA && erroIA.tipo !== "cancelado") avisar("IA: " + erroIA.message + ". Completei com o que estava guardado e com o banco.");
+  else if (temIA() && semArquivo) avisar("A IA ainda não tem seus slides. Arraste os arquivos de novo na matéria.");
+  else if (falhou) avisar("O banco online não respondeu. Usando as questões guardadas.");
 }
 
 function telaCarregando() {
   mostrar(el("div", { class: "conteudo" },
     el("section", { class: "cartao cartao-quiz carregando" },
-      el("h1", { class: "titulo-tela" }, "buscando questões…"),
+      el("h1", { class: "titulo-tela" }, temIA() ? "criando perguntas dos seus slides…" : "buscando questões…"),
+      temIA() && el("p", { class: "traducao" }, "Pode levar de 1 a 2 minutos quando precisa criar perguntas novas."),
+      temIA() && el("button", { type: "button", class: "botao botao-claro", onclick: (e) => {
+        e.target.disabled = true;
+        controleIA.abort();
+      } }, "não esperar, usar o banco"),
       el("button", { type: "button", class: "botao botao-claro", onclick: () => ir("inicio") }, "cancelar")
     )
   ));
@@ -791,7 +835,49 @@ function telaResultado() {
 }
 
 /* ============================================================
-   10. INÍCIO
+   10. CONFIGURAR IA
+   ============================================================ */
+function abrirIA() {
+  $("#chave-ia").value = "";
+  $("#chave-ia").placeholder = temIA() ? "chave já salva (cole outra para trocar)" : "cole aqui a sua chave";
+  $("#resultado-ia").textContent = temIA() ? "IA ligada." + (configIA.modelos ? " Modelo: " + configIA.modelos[0] + "." : "") : "";
+  $("#apagar-ia").hidden = !temIA();
+  $("#janela-ia").showModal();
+}
+
+$("#form-ia").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const saida = $("#resultado-ia");
+  const chave = $("#chave-ia").value.trim();
+  if (!chave) { saida.textContent = temIA() ? "A chave salva continua valendo." : "Cole a chave primeiro."; return; }
+  if (!/^[\w.-]{20,200}$/.test(chave)) { saida.textContent = "Isso não parece uma chave. Copie de novo, sem espaços."; return; }
+  const botao = $("#salvar-ia");
+  botao.disabled = true;
+  saida.textContent = "Testando a chave…";
+  try {
+    const modelos = await listarModelos(chave);
+    if (!guardarIA({ chave, modelos, quando: Date.now() })) throw new Error("este navegador não deixou salvar a chave");
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    $("#chave-ia").value = "";
+    $("#apagar-ia").hidden = false;
+    saida.textContent = "Chave aceita. IA ligada, modelo " + modelos[0] + ".";
+    if ($(".modos")) telaInicial();
+  } catch (erro) {
+    saida.textContent = "Não deu: " + erro.message + ".";
+  }
+  botao.disabled = false;
+});
+
+$("#apagar-ia").addEventListener("click", () => {
+  guardarIA({});
+  $("#apagar-ia").hidden = true;
+  $("#chave-ia").placeholder = "cole aqui a sua chave";
+  $("#resultado-ia").textContent = "Chave apagada deste navegador. IA desligada.";
+  if ($(".modos")) telaInicial();
+});
+
+/* ============================================================
+   11. INÍCIO
    ============================================================ */
 window.addEventListener("hashchange", desenhar);
 // Ao voltar para a aba em outro dia, atualiza o foguinho da tela inicial.
@@ -800,3 +886,7 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden && naInicial && !carregando && !$("dialog[open]")) telaInicial();
 });
 desenhar();
+carregarListaIA().then(() => {
+  if (redesenharMateriais) redesenharMateriais();
+  if ($(".modos") && !carregando && !$("dialog[open]")) telaInicial();
+});
