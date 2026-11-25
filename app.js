@@ -5,7 +5,7 @@
    ============================================================ */
 const CHAVE = "quiz-diario-v1";
 const UM_DIA = 24 * 60 * 60 * 1000;
-const VERSAO = 7; // mude junto com os ?v= do index.html
+const VERSAO = 8; // mude junto com os ?v= do index.html
 
 // Botões de teste só aparecem no computador, nunca no site publicado.
 const MODO_TESTE = ["", "localhost", "127.0.0.1"].includes(location.hostname);
@@ -639,7 +639,7 @@ function linhaFonte(p) {
     const origem = ORIGENS[p.origem];
     return el("p", { class: "fonte" }, "Fonte: ",
       el("a", { href: origem.url, target: "_blank", rel: "noopener noreferrer" }, origem.nome),
-      (p.ano ? ", " + p.ano : "") + (p.ingles && traducoes[p.chave] ? " · tradução automática" : "") + " · dificuldade estimada, não revisada");
+      (p.ano ? ", " + p.ano : "") + (p.ingles && traducoes[p.chave] ? (traducoes[p.chave].porIA ? " · traduzida por IA" : " · tradução automática") : "") + " · dificuldade estimada, não revisada");
   }
   if (p.exemplo) return el("p", { class: "fonte" }, "Pergunta de exemplo, sem fonte conferida.");
   const fonte = FONTES[p.fonte];
@@ -664,9 +664,17 @@ async function comecarQuiz() {
   carregando = true;
   ligarTradutor((p) => avisar("Baixando o tradutor do Chrome: " + p + "%"));
   controleIA = new AbortController();
-  telaCarregando();
+  telaCarregando(temIA() ? "criando perguntas dos seus slides…" : "buscando questões…", "não esperar, usar o banco");
   const { perguntas, falhou, erroIA, semArquivo } = await montarPerguntas(controleIA.signal);
   if (minha !== busca) return; // a pessoa saiu durante a busca
+  const emIngles = perguntas.filter((p) => p.ingles && !(traducoes[p.chave] || {}).porIA);
+  let erroTraducao = null;
+  if (temIA() && emIngles.length) {
+    controleIA = new AbortController();
+    telaCarregando("traduzindo as questões do banco…", "não esperar, usar o tradutor do Chrome");
+    erroTraducao = await traduzirComIA(emIngles, controleIA.signal);
+    if (minha !== busca) return;
+  }
   carregando = false;
   if (!perguntas.length) {
     ir("inicio");
@@ -676,19 +684,20 @@ async function comecarQuiz() {
   quiz = { modo: modo.nome, perguntas, atual: 0, respostas: [], original: {}, terminou: false };
   ir("quiz");
   if (erroIA && erroIA.tipo !== "cancelado") avisar("IA: " + erroIA.message + ". Completei com o que estava guardado e com o banco.");
+  else if (erroTraducao && erroTraducao.tipo !== "cancelado") avisar("IA: " + erroTraducao.message + ". Parte do quiz usa o tradutor do Chrome.");
   else if (temIA() && semArquivo) avisar("A IA ainda não tem seus slides. Arraste os arquivos de novo na matéria.");
   else if (falhou) avisar("O banco online não respondeu. Usando as questões guardadas.");
 }
 
-function telaCarregando() {
+function telaCarregando(titulo, pular) {
   mostrar(el("div", { class: "conteudo" },
     el("section", { class: "cartao cartao-quiz carregando" },
-      el("h1", { class: "titulo-tela" }, temIA() ? "criando perguntas dos seus slides…" : "buscando questões…"),
-      temIA() && el("p", { class: "traducao" }, "Pode levar de 1 a 2 minutos quando precisa criar perguntas novas."),
+      el("h1", { class: "titulo-tela" }, titulo),
+      temIA() && el("p", { class: "traducao" }, "Pode levar de 1 a 2 minutos. Na próxima vez, aproveita o que já ficou pronto."),
       temIA() && el("button", { type: "button", class: "botao botao-claro", onclick: (e) => {
         e.target.disabled = true;
         controleIA.abort();
-      } }, "não esperar, usar o banco"),
+      } }, pular),
       el("button", { type: "button", class: "botao botao-claro", onclick: () => ir("inicio") }, "cancelar")
     )
   ));

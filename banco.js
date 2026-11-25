@@ -388,6 +388,14 @@ function corrigir(ingles, saida) {
   return saida.replace(/\s+([,.;:?!])/g, "$1");
 }
 
+// Guarda na memória, jogando fora as mais antigas quando passa do limite.
+function guardarTraducao(chave, feita) {
+  delete traducoes[chave];
+  traducoes[chave] = feita;
+  const chaves = Object.keys(traducoes);
+  chaves.slice(0, Math.max(0, chaves.length - MAXIMO_TRADUCOES)).forEach((c) => delete traducoes[c]);
+}
+
 const traduzindo = new Map();
 
 // Devolve { pergunta, opcoes, explicacao } em português, ou null.
@@ -401,9 +409,7 @@ function traduzirQuestao(q) {
       const feita = { pergunta: await traduzirTexto(t, q.pergunta), opcoes: [], explicacao: "" };
       for (const o of q.opcoes) feita.opcoes.push(await traduzirTexto(t, o));
       feita.explicacao = await traduzirTexto(t, q.explicacao);
-      traducoes[q.chave] = feita;
-      const chaves = Object.keys(traducoes);
-      chaves.slice(0, Math.max(0, chaves.length - MAXIMO_TRADUCOES)).forEach((c) => delete traducoes[c]);
+      guardarTraducao(q.chave, feita);
       guardar(CHAVE_TRADUCOES, traducoes);
       return feita;
     })().catch(() => null).finally(() => traduzindo.delete(q.chave));
